@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <!-- Mobile optimization -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Celestial Symphony: A Cosmic Journey</title>
+  <style>
+    /* Reset and full-screen canvas styling */
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #000;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+    /* The game canvas covers the entire viewport */
+    #gameCanvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      background: radial-gradient(ellipse at center, #001 0%, #000 80%);
+    }
+    /* Overlay text shown at start */
+    #overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 2em;
+      text-align: center;
+      background: rgba(0, 0, 0, 0.6);
+      pointer-events: none;
+      animation: fadeOut 2s ease-in forwards;
+      animation-delay: 1.5s;
+    }
+    @keyframes fadeOut {
+      from { opacity: 1; }
+      to { opacity: 0; }
+    }
+  </style>
+</head>
+<body>
+  <!-- The canvas where the game is drawn -->
+  <canvas id="gameCanvas"></canvas>
+  <!-- Intro overlay text -->
+  <div id="overlay">Touch or Click to Begin Your Journey</div>
+  <script>
+    // Get the canvas and context
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    let width, height;
+    function resize() {
+      width = window.innerWidth;
+      height = window.innerHeight;
+      canvas.width = width;
+      canvas.height = height;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    // Web Audio API setup for on-demand sound generation
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    const audioCtx = new AudioContext();
+    function playNote(frequency, type = 'sine', duration = 0.3) {
+      const oscillator = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+      oscillator.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      oscillator.type = type;
+      oscillator.frequency.setValueAtTime(frequency, audioCtx.currentTime);
+      // Fade out the note
+      gainNode.gain.setValueAtTime(0.5, audioCtx.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+      oscillator.start();
+      oscillator.stop(audioCtx.currentTime + duration);
+    }
+
+    // Player object representing the glowing star you control
+    const player = {
+      x: width / 2,
+      y: height / 2,
+      radius: 20,
+      color: '#FFD700'
+    };
+
+    // Orb class – collectible objects that generate color and sound
+    class Orb {
+      constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.radius = 10 + Math.random() * 5;
+        this.color = 'hsl(' + Math.floor(Math.random() * 360) + ', 100%, 50%)';
+      }
+      draw() {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = this.color;
+        ctx.shadowBlur = 20;
+        ctx.shadowColor = this.color;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+    }
+
+    // Create an initial set of orbs
+    let orbs = [];
+    function spawnOrb() {
+      const x = Math.random() * width;
+      const y = Math.random() * height;
+      orbs.push(new Orb(x, y));
+    }
+    for (let i = 0; i < 10; i++) { spawnOrb(); }
+
+    // Particle class for explosion effects when orbs are collected
+    class Particle {
+      constructor(x, y, color) {
+        this.x = x;
+        this.y = y;
+        this.radius = Math.random() * 3 + 2;
+        this.color = color;
+        this.vx = (Math.random() - 0.5) * 4;
+        this.vy = (Math.random() - 0.5) * 4;
+        this.alpha = 1;
+      }
+      update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        this.alpha -= 0.02;
+      }
+      draw() {
+        ctx.save();
+        ctx.globalAlpha = this.alpha;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = this.color;
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+    let particles = [];
+
+    // Touch/mouse input: smoothly move the player towards the touched/clicked point
+    let targetX = player.x, targetY = player.y;
+    function updatePlayerPosition() {
+      const dx = targetX - player.x;
+      const dy = targetY - player.y;
+      player.x += dx * 0.1;
+      player.y += dy * 0.1;
+    }
+    function handleInput(e) {
+      e.preventDefault();
+      let x, y;
+      if (e.touches) {
+        x = e.touches[0].clientX;
+        y = e.touches[0].clientY;
+      } else {
+        x = e.clientX;
+        y = e.clientY;
+      }
+      targetX = x;
+      targetY = y;
+    }
+    canvas.addEventListener('touchstart', (e) => {
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      document.getElementById('overlay').style.display = 'none';
+      handleInput(e);
+    });
+    canvas.addEventListener('touchmove', handleInput);
+    canvas.addEventListener('mousedown', (e) => {
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      document.getElementById('overlay').style.display = 'none';
+      handleInput(e);
+    });
+    canvas.addEventListener('mousemove', handleInput);
+
+    // Main game loop: update positions, check collisions, and render everything
+    function gameLoop() {
+      // Clear canvas
+      ctx.clearRect(0, 0, width, height);
+
+      // Create a dynamic, animated radial gradient background
+      let time = Date.now() * 0.0005;
+      let gradient = ctx.createRadialGradient(width / 2, height / 2, 0, width / 2, height / 2, Math.max(width, height) / 1.2);
+      gradient.addColorStop(0, 'hsl(' + (time * 40 % 360) + ', 50%, 20%)');
+      gradient.addColorStop(1, '#000');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, width, height);
+
+      // Update player position and draw the player (with a glowing effect)
+      updatePlayerPosition();
+      ctx.beginPath();
+      ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
+      ctx.fillStyle = player.color;
+      ctx.shadowBlur = 30;
+      ctx.shadowColor = player.color;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // Draw orbs; detect collisions with the player
+      for (let i = orbs.length - 1; i >= 0; i--) {
+        let orb = orbs[i];
+        let dx = orb.x - player.x;
+        let dy = orb.y - player.y;
+        let distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance < player.radius + orb.radius) {
+          // When collected, play a musical note with a randomized frequency
+          playNote(200 + Math.random() * 400, 'sine', 0.2);
+          // Generate an explosion of particles from the orb’s location
+          for (let j = 0; j < 20; j++) {
+            particles.push(new Particle(orb.x, orb.y, orb.color));
+          }
+          // Remove the collected orb and spawn a new one
+          orbs.splice(i, 1);
+          spawnOrb();
+          continue;
+        }
+        orb.draw();
+      }
+
+      // Update and draw particles; remove them when they fade out
+      for (let i = particles.length - 1; i >= 0; i--) {
+        let p = particles[i];
+        p.update();
+        if (p.alpha <= 0) {
+          particles.splice(i, 1);
+          continue;
+        }
+        p.draw();
+      }
+
+      requestAnimationFrame(gameLoop);
+    }
+
+    // Start the game loop after a short delay to allow the audio context to initialize
+    setTimeout(() => {
+      requestAnimationFrame(gameLoop);
+    }, 1000);
+  </script>
+</body>
+</html>
